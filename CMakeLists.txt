@@ -26,6 +26,7 @@ add_library(glasswindow SHARED
 # Set include dirs, add libdrm include dirs here
 target_include_directories(glasswindow PRIVATE
     include/
+    ${Hyprland_INCLUDE_DIRS}
     ${PIXMAN_INCLUDE_DIRS}
     ${LIBDRM_INCLUDE_DIRS}   # Add libdrm include dirs here
 )
