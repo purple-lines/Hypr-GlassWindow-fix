@@ -9,7 +9,7 @@ commit_pins = [
 [Hypr-GlassWindow]
 description = "A glass shader window effect plugin for Hyprland"
 authors = ["sashavrg"]
-output = "build/lib/glasswindow.so"
+output = "build/glasswindow.so"
 build = [
     "cmake -Bbuild -H.",
     "cmake --build build"
