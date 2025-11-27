@@ -1,4 +1,4 @@
-#include <HyprlandAPI.hpp>
+#include <hyprland/src/plugins/PluginAPI.hpp>
 #include <regex>
 #include <vector>
 #include <string>
