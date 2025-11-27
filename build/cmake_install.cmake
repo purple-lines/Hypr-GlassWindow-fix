@@ -1,4 +1,4 @@
-# Install script for directory: /home/svergolini/Documents/GitHub/hyprland-glass-shader/Hypr-GlassWindow
+# Install script for directory: /home/purplelines/Documents/GitHub/hyprland-glass-shader/Hypr-GlassWindow
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
