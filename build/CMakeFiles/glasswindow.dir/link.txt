@@ -1,1 +1,0 @@
-/usr/lib64/ccache/c++ -fPIC -Wl,--dependency-file=CMakeFiles/glasswindow.dir/link.d -shared -Wl,-soname,glasswindow.so -o glasswindow.so CMakeFiles/glasswindow.dir/src/glasswindow.cpp.o  -lpixman-1 -ldrm

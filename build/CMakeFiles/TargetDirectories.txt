@@ -1,3 +1,0 @@
-/home/purplelines/Documents/GitHub/hyprland-glass-shader/Hypr-GlassWindow/build/CMakeFiles/glasswindow.dir
-/home/purplelines/Documents/GitHub/hyprland-glass-shader/Hypr-GlassWindow/build/CMakeFiles/edit_cache.dir
-/home/purplelines/Documents/GitHub/hyprland-glass-shader/Hypr-GlassWindow/build/CMakeFiles/rebuild_cache.dir
