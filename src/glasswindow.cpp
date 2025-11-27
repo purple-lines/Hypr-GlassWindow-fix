@@ -1,8 +1,11 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
+#include <hyprland/src/helpers/Color.hpp>
 #include <regex>
 #include <vector>
 #include <string>
-#include <optional>
+#include <any>
+
+inline HANDLE PHANDLE = nullptr;
 
 class CGlassWindow {
   public:
@@ -17,36 +20,42 @@ class CGlassWindow {
         registerConfig();
         reloadConfig();
 
-        // Register render hook
-        HyprlandAPI::registerCallback(m_pluginHandle, "renderWindow", 
-            [this](void* data) { this->onRenderWindow(data); });
+        // Register render hook using the new dynamic callback API
+        m_renderCallback = HyprlandAPI::registerCallbackDynamic(
+            m_pluginHandle, "render",
+            [this](void* thisptr, SCallbackInfo& info, std::any data) { 
+                this->onRenderWindow(thisptr, info, data); 
+            });
 
-        // Register config reload hook (optional)
-        HyprlandAPI::registerCallback(m_pluginHandle, "configReload", 
-            [this](void*) { this->reloadConfig(); });
+        // Register config reload hook
+        m_configCallback = HyprlandAPI::registerCallbackDynamic(
+            m_pluginHandle, "configReloaded",
+            [this](void* thisptr, SCallbackInfo& info, std::any data) { 
+                this->reloadConfig(); 
+            });
     }
 
     // Called once on plugin exit
     void cleanup() {
-        // Unregister all hooks
-        HyprlandAPI::unregisterCallback(m_pluginHandle, "renderWindow");
-        HyprlandAPI::unregisterCallback(m_pluginHandle, "configReload");
-
-        // TODO: free shaders/resources here
+        // Reset callback pointers to unregister them
+        m_renderCallback.reset();
+        m_configCallback.reset();
     }
 
   private:
     HANDLE m_pluginHandle = nullptr;
 
+    // Callback handles - must be kept alive
+    SP<HOOK_CALLBACK_FN> m_renderCallback;
+    SP<HOOK_CALLBACK_FN> m_configCallback;
+
     // Config keys (strings, floats, ints)
     std::string m_rulesRaw;             // Raw regex/rule strings from config
-    std::vector<std::regex> m_rules;   // Parsed regex rules
+    std::vector<std::regex> m_rules;    // Parsed regex rules
 
     float m_strength = 0.7f;            // Glass effect strength (blur etc)
-    float m_chromaticAberration = 0.f; // Chromatic aberration strength
+    float m_chromaticAberration = 0.f;  // Chromatic aberration strength
     float m_opacity = 0.9f;             // Opacity of glass effect
-
-    // TODO: shader program handles
 
     CGlassWindow() = default;
     ~CGlassWindow() = default;
@@ -54,22 +63,25 @@ class CGlassWindow {
     CGlassWindow& operator=(const CGlassWindow&) = delete;
 
     void registerConfig() {
-        // Register your config keys here with default values
-        HyprlandAPI::addConfigValue(m_pluginHandle, "plugin:glasswindow:rules", ".*");
-        HyprlandAPI::addConfigValue(m_pluginHandle, "plugin:glasswindow:strength", "0.7");
-        HyprlandAPI::addConfigValue(m_pluginHandle, "plugin:glasswindow:chromatic_aberration", "0.0");
-        HyprlandAPI::addConfigValue(m_pluginHandle, "plugin:glasswindow:opacity", "0.9");
+        // Register config keys with Hyprlang::CConfigValue
+        HyprlandAPI::addConfigValue(m_pluginHandle, "plugin:glasswindow:rules", Hyprlang::STRING{".*"});
+        HyprlandAPI::addConfigValue(m_pluginHandle, "plugin:glasswindow:strength", Hyprlang::FLOAT{0.7f});
+        HyprlandAPI::addConfigValue(m_pluginHandle, "plugin:glasswindow:chromatic_aberration", Hyprlang::FLOAT{0.0f});
+        HyprlandAPI::addConfigValue(m_pluginHandle, "plugin:glasswindow:opacity", Hyprlang::FLOAT{0.9f});
     }
 
     void reloadConfig() {
-        m_rulesRaw = HyprlandAPI::getConfigValue(m_pluginHandle, "plugin:glasswindow:rules");
-        m_strength = std::stof(HyprlandAPI::getConfigValue(m_pluginHandle, "plugin:glasswindow:strength"));
-        m_chromaticAberration = std::stof(HyprlandAPI::getConfigValue(m_pluginHandle, "plugin:glasswindow:chromatic_aberration"));
-        m_opacity = std::stof(HyprlandAPI::getConfigValue(m_pluginHandle, "plugin:glasswindow:opacity"));
+        static auto* const PRULES = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(m_pluginHandle, "plugin:glasswindow:rules")->getDataStaticPtr();
+        static auto* const PSTRENGTH = (Hyprlang::FLOAT const*)HyprlandAPI::getConfigValue(m_pluginHandle, "plugin:glasswindow:strength")->getDataStaticPtr();
+        static auto* const PCHROMATIC = (Hyprlang::FLOAT const*)HyprlandAPI::getConfigValue(m_pluginHandle, "plugin:glasswindow:chromatic_aberration")->getDataStaticPtr();
+        static auto* const POPACITY = (Hyprlang::FLOAT const*)HyprlandAPI::getConfigValue(m_pluginHandle, "plugin:glasswindow:opacity")->getDataStaticPtr();
+
+        m_rulesRaw = *PRULES;
+        m_strength = *PSTRENGTH;
+        m_chromaticAberration = *PCHROMATIC;
+        m_opacity = *POPACITY;
 
         parseRules(m_rulesRaw);
-
-        // TODO: update shader uniforms here
     }
 
     void parseRules(const std::string& rulesRaw) {
@@ -81,11 +93,16 @@ class CGlassWindow {
             size_t end = rulesRaw.find(';', start);
             std::string rule = rulesRaw.substr(start, (end == std::string::npos ? rulesRaw.size() : end) - start);
 
-            try {
-                m_rules.emplace_back(rule, std::regex::ECMAScript | std::regex::icase);
-            } catch (const std::regex_error& e) {
-                HyprlandAPI::addNotification(m_pluginHandle, "glasswindow", 
-                    "Invalid regex in rules: " + rule, "error", 5000);
+            if (!rule.empty()) {
+                try {
+                    m_rules.emplace_back(rule, std::regex::ECMAScript | std::regex::icase);
+                } catch (const std::regex_error& e) {
+                    HyprlandAPI::addNotificationV2(m_pluginHandle, {
+                        {"text", "glasswindow: Invalid regex: " + rule},
+                        {"time", (uint64_t)5000},
+                        {"color", CHyprColor(1.0, 0.0, 0.0, 1.0)}
+                    });
+                }
             }
 
             if (end == std::string::npos) break;
@@ -104,40 +121,28 @@ class CGlassWindow {
 
     void applyGlassEffect(void* window) {
         // TODO: Implement your shader or blur effect here, using m_strength, m_chromaticAberration, m_opacity
-
-        // Placeholder:
-        // HyprlandAPI::drawCustomEffect(window, m_strength, m_chromaticAberration, m_opacity);
     }
 
-    void onRenderWindow(void* data) {
-        // `data` usually points to a structure describing the window being rendered, e.g. CWindow*
-
-        // Extract window title (pseudo-code)
-        std::string windowTitle = getWindowTitleFromData(data);
-
-        if (!shouldApplyToWindow(windowTitle))
-            return;
-
-        applyGlassEffect(data);
-    }
-
-    // Dummy placeholder for getting window title from `data`
-    std::string getWindowTitleFromData(void* data) {
-        // TODO: Use actual Hyprland API to get window title string
-        return "ExampleWindowTitle";
+    void onRenderWindow(void* thisptr, SCallbackInfo& info, std::any data) {
+        // TODO: Extract window from data and apply effect
+        // The actual data type depends on the event
     }
 };
 
-extern "C" {
-
-// Plugin entry point called by Hyprland when plugin loads
-void PLUGIN_INIT(HANDLE handle) {
+// Plugin entry point - must return PLUGIN_DESCRIPTION_INFO
+APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
+    PHANDLE = handle;
     CGlassWindow::getInstance().init(handle);
+
+    return PLUGIN_DESCRIPTION_INFO{
+        "glasswindow",
+        "Glass window effect plugin for Hyprland",
+        "purplelines",
+        "1.0.0"
+    };
 }
 
-// Plugin exit point called by Hyprland when plugin unloads
-void PLUGIN_EXIT() {
+// Plugin exit point
+APICALL EXPORT void PLUGIN_EXIT() {
     CGlassWindow::getInstance().cleanup();
-}
-
 }
